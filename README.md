@@ -353,7 +353,7 @@ For regulated workloads also consider: Customer-Managed Keys (CMK) via Key Vault
 
 Robert Okolotowicz
 Azure AI Security Architect
-[LinkedIn](www.linkedin.com/in/robert-okolotowicz/) · [GitHub](https://github.com/rokolotowicz)
+[LinkedIn](https://www.linkedin.com/in/robert-okolotowicz/) · [GitHub](https://github.com/rokolotowicz)
 
 ---
 
