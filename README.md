@@ -26,7 +26,7 @@
 
 This POC demonstrates an Azure AI Architect's ability to design and deploy a production-shaped document intelligence pipeline across 8+ Azure services. Documents are ingested via blob storage, enriched in parallel by four AI services, persisted to Cosmos DB, indexed in AI Search, and visualized through a deployed Static Web App dashboard.
 
-It pairs directly with a [Secure RAG POC](https://github.com/YOUR_USERNAME/secure-rag-poc) to form a complete document lifecycle:
+It pairs directly with a [Secure RAG POC](https://github.com/rokolotowicz/secure-rag-poc) to form a complete document lifecycle:
 
 ```
 This repo:  ingest → enrich → index
@@ -47,7 +47,7 @@ RAG repo:   query  → retrieve → generate
   ⚡  Azure Functions             ← Flex Consumption · managed identity
           │
     ┌─────┴──────────────────────────────────────┐
-    │  asyncio.gather() — parallel fan-out        │
+    │  asyncio.gather() — parallel fan-out       │
     ▼                                            ▼
   📋 Document Intelligence          👁️  Azure AI Vision
      Layout · KV pairs · tables         Captions · OCR · tags
@@ -345,7 +345,7 @@ For regulated workloads also consider: Customer-Managed Keys (CMK) via Key Vault
 
 ## Companion Projects
 
-- [Secure RAG POC](https://github.com/YOUR_USERNAME/secure-rag-poc) — semantic retrieval over documents indexed by this pipeline
+- [Secure RAG POC](https://github.com/rokolotowicz/secure-rag-poc)  
 
 ---
 
@@ -353,7 +353,7 @@ For regulated workloads also consider: Customer-Managed Keys (CMK) via Key Vault
 
 **YOUR NAME**
 Azure AI Security Architect
-[LinkedIn](https://linkedin.com/in/YOUR_PROFILE) · [GitHub](https://github.com/YOUR_USERNAME)
+[LinkedIn](www.linkedin.com/in/robert-okolotowicz/) · [GitHub](https://github.com/rokolotowicz)
 
 ---
 
