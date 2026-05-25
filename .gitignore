@@ -1,0 +1,7 @@
+functions/local.settings.json
+.env
+.venv/
+__pycache__/
+*.pyc
+infra/*.parameters.json
+azure_doc_intelligence_pipeline.svg

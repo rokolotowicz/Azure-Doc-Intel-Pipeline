@@ -1,0 +1,17 @@
+{
+  "name": "documents",
+  "corsOptions": {
+    "allowedOrigins": ["https://ashy-mushroom-0d9ea4c0f.7.azurestaticapps.net"],
+    "maxAgeInSeconds": 300
+  },
+  "fields": [
+    {"name":"id","type":"Edm.String","key":true,"searchable":false,"retrievable":true},
+    {"name":"blobName","type":"Edm.String","searchable":true,"retrievable":true},
+    {"name":"documentType","type":"Edm.String","retrievable":true,"filterable":true,"facetable":true},
+    {"name":"processedAt","type":"Edm.DateTimeOffset","retrievable":true,"filterable":true,"sortable":true},
+    {"name":"searchContent","type":"Edm.String","searchable":true,"retrievable":true,"analyzer":"en.microsoft"},
+    {"name":"sentiment","type":"Edm.String","retrievable":true,"filterable":true,"facetable":true},
+    {"name":"summary","type":"Edm.String","searchable":true,"retrievable":true},
+    {"name":"detectedLanguage","type":"Edm.String","retrievable":true,"filterable":true}
+  ]
+}
