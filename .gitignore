@@ -4,4 +4,7 @@ functions/local.settings.json
 __pycache__/
 *.pyc
 infra/*.parameters.json
-azure_doc_intelligence_pipeline.svg
+azure_doc_intelligence_pipeline.svgfunctions/orchestrator/v-1__init__.py
+backup_functionapp_june5th/
+temp-reprocess/
+v1-index.html
