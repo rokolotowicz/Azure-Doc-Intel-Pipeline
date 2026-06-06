@@ -1,0 +1,17 @@
+﻿{
+  "name": "doc-intelligence",
+  "corsOptions": {
+    "allowedOrigins": ["*"],
+    "maxAgeInSeconds": 300
+  },
+  "fields": [
+    {"name": "id", "type": "Edm.String", "key": true, "searchable": false},
+    {"name": "blobName", "type": "Edm.String", "searchable": true},
+    {"name": "documentType", "type": "Edm.String", "filterable": true, "facetable": true},
+    {"name": "processedAt", "type": "Edm.DateTimeOffset", "filterable": true, "sortable": true},
+    {"name": "searchContent", "type": "Edm.String", "searchable": true, "analyzer": "en.microsoft"},
+    {"name": "sentiment", "type": "Edm.String", "filterable": true, "facetable": true},
+    {"name": "summary", "type": "Edm.String", "searchable": true},
+    {"name": "detectedLanguage", "type": "Edm.String", "filterable": true}
+  ]
+}

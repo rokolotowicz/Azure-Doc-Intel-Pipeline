@@ -3,12 +3,9 @@
   "entryPoint": "main",
   "bindings": [
     {
-      "name": "myblob",
-      "type": "blobTrigger",
-      "direction": "in",
-      "path": "documents-ingest/{name}",
-      "connection": "AzureWebJobsStorage",
-      "dataType": "binary"
+      "name": "event",
+      "type": "eventGridTrigger",
+      "direction": "in"
     }
   ]
 }
