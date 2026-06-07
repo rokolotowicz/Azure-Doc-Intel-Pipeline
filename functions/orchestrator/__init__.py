@@ -59,10 +59,8 @@ def get_auth():
 # Event Grid trigger entry point
 # ---------------------------------------------------------------------------
 def main(event: func.EventGridEvent) -> None:
-    # 1. Absolute first logging statement inside main
     logging.info("Startup complete")
     
-    # 2. Broad try/except wrapping the entire execution logic
     try:
         logging.info(f"====== PIPELINE STARTED: Event Grid Subject: {event.subject} ======")
 
@@ -70,7 +68,7 @@ def main(event: func.EventGridEvent) -> None:
         if not IMPORTS_SUCCESSFUL:
             raise RuntimeError(f"Missing Python dependency! Error:\n{IMPORT_ERROR}")
 
-        # Safely retrieve environment variables with fallbacks
+        # Safely retrieve environment variables with fallbacks to match RAG PoC settings
         env = {
             "DOC_INTEL_ENDPOINT": os.environ.get("DOC_INTEL_ENDPOINT"),
             "DOC_INTEL_KEY": os.environ.get("DOC_INTEL_KEY"),
@@ -79,19 +77,29 @@ def main(event: func.EventGridEvent) -> None:
             "TRANSLATOR_ENDPOINT": os.environ.get("TRANSLATOR_ENDPOINT"),
             "TRANSLATOR_KEY": os.environ.get("TRANSLATOR_KEY"),
             "TRANSLATOR_REGION": os.environ.get("TRANSLATOR_REGION", "eastus"),
-            "OPENAI_ENDPOINT": os.environ.get("OPENAI_ENDPOINT"),
-            "OPENAI_DEPLOYMENT": os.environ.get("OPENAI_DEPLOYMENT", "gpt-4.1-mini"),
+            
+            # OpenAI Fallbacks
+            "OPENAI_ENDPOINT": os.environ.get("OPENAI_ENDPOINT") or os.environ.get("AZURE_OPENAI_ENDPOINT"),
+            "OPENAI_KEY": os.environ.get("OPENAI_KEY") or os.environ.get("AZURE_OPENAI_API_KEY") or os.environ.get("AZURE_OPENAI_KEY"),
+            "OPENAI_DEPLOYMENT": os.environ.get("OPENAI_DEPLOYMENT") or os.environ.get("GPT_DEPLOYMENT_NAME") or "gpt-4.1-mini",
+            "EMBEDDING_DEPLOYMENT": os.environ.get("EMBEDDING_DEPLOYMENT") or os.environ.get("EMBEDDING_DEPLOYMENT_NAME") or "text-embedding-3-large",
+            
+            # Cosmos DB Configuration
             "COSMOS_ENDPOINT": os.environ.get("COSMOS_ENDPOINT"),
             "COSMOS_KEY": os.environ.get("COSMOS_KEY"),
             "COSMOS_DATABASE": os.environ.get("COSMOS_DATABASE", "documentpipeline"),
             "COSMOS_CONTAINER": os.environ.get("COSMOS_CONTAINER", "enriched-documents"),
-            "AI_SEARCH_ENDPOINT": os.environ.get("AI_SEARCH_ENDPOINT"),
-            "AI_SEARCH_KEY": os.environ.get("AI_SEARCH_KEY"),
+            
+            # Search Index Fallbacks
+            "AI_SEARCH_ENDPOINT": os.environ.get("AI_SEARCH_ENDPOINT") or os.environ.get("AZURE_SEARCH_ENDPOINT"),
+            "AI_SEARCH_KEY": os.environ.get("AI_SEARCH_KEY") or os.environ.get("AZURE_SEARCH_API_KEY"),
             "AI_SEARCH_INDEX": os.environ.get("AI_SEARCH_INDEX", "doc-intelligence"),
+            "RAG_SEARCH_INDEX": os.environ.get("RAG_SEARCH_INDEX") or os.environ.get("AZURE_SEARCH_INDEX_NAME") or "documents",
+            
             "AzureWebJobsStorage": os.environ.get("AzureWebJobsStorage"),
         }
 
-        # Check for required properties (excluding those with built-in fallbacks)
+        # Check for required core configurations
         required_keys = [
             "DOC_INTEL_ENDPOINT", "DOC_INTEL_KEY", 
             "VISION_ENDPOINT", "VISION_KEY", 
@@ -135,7 +143,16 @@ def main(event: func.EventGridEvent) -> None:
         file_ext = blob_name.rsplit(".", 1)[-1].lower() if "." in blob_name else "unknown"
         is_image = file_ext in {"jpg", "jpeg", "png", "bmp", "tiff", "webp"}
 
-        # Safe executor helper to capture errors per stage without halting others
+        # Pre-decode plaintext files natively
+        native_text = ""
+        if file_ext in {"txt", "csv", "md", "json", "html", "xml"}:
+            try:
+                native_text = blob_content.decode("utf-8", errors="ignore")
+                logging.info(f"[pipeline] Handled plain-text file natively. Extracted {len(native_text)} characters.")
+            except Exception as decode_err:
+                logging.warning(f"[pipeline] Failed native decoding of plaintext file: {decode_err}")
+
+        # Safe executor helper to capture errors per stage
         def safe_execute(func_to_call, *args):
             try:
                 return func_to_call(*args)
@@ -143,17 +160,17 @@ def main(event: func.EventGridEvent) -> None:
                 logging.error(f"[pipeline] Error in {func_to_call.__name__}: {str(e)}")
                 return e
 
-        # Parallel AI enrichment execution
-        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-            f_doc = executor.submit(safe_execute, enrich_document_intelligence, blob_content, blob_name, env)
-            f_vis = executor.submit(safe_execute, enrich_vision, blob_content, blob_name, is_image, env)
-            f_oai = executor.submit(safe_execute, enrich_openai, blob_content, blob_name, file_ext, env)
-            f_trn = executor.submit(safe_execute, enrich_translator, blob_content, blob_name, file_ext, env)
-
-            doc_intel_result = f_doc.result()
-            vision_result = f_vis.result()
-            openai_result = f_oai.result()
-            translator_result = f_trn.result()
+        # ───────────────────────────────────────────────────────────────────────────
+        # Sequential AI enrichment execution (Main Thread Debugging)
+        # ───────────────────────────────────────────────────────────────────────────
+        logging.info("[pipeline] Starting sequential AI enrichment execution...")
+        
+        doc_intel_result = safe_execute(enrich_document_intelligence, blob_content, blob_name, file_ext, env)
+        vision_result = safe_execute(enrich_vision, blob_content, blob_name, is_image, env)
+        openai_result = safe_execute(enrich_openai, blob_content, blob_name, file_ext, env, native_text)
+        translator_result = safe_execute(enrich_translator, blob_content, blob_name, file_ext, env)
+        
+        logging.info("[pipeline] Sequential AI enrichment execution complete.")
 
         doc_id = str(uuid.uuid4())
         enriched = build_enriched_document(
@@ -164,24 +181,27 @@ def main(event: func.EventGridEvent) -> None:
             vision=vision_result if not isinstance(vision_result, Exception) else None,
             openai=openai_result if not isinstance(openai_result, Exception) else None,
             translator=translator_result if not isinstance(translator_result, Exception) else None,
+            native_text=native_text
         )
 
-        # Parallel indexing and database storage writes
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            f_cos = executor.submit(safe_execute, write_cosmos, enriched, env)
-            f_src = executor.submit(safe_execute, write_search_index, enriched, env)
+        # ───────────────────────────────────────────────────────────────────────────
+        # Sequential DB/Search Index Writes (Main Thread Debugging)
+        # ───────────────────────────────────────────────────────────────────────────
+        logging.info("[pipeline] Starting sequential database and search index writes...")
+        
+        cos_res = safe_execute(write_cosmos, enriched, env)
+        src_res = safe_execute(write_search_index, enriched, doc_intel_result if not isinstance(doc_intel_result, Exception) else None, native_text, env)
+        
+        if isinstance(cos_res, Exception): 
+            logging.warning(f"[cosmos] failed: {cos_res}")
+        if isinstance(src_res, Exception): 
+            logging.warning(f"[search] failed: {src_res}")
             
-            cos_res = f_cos.result()
-            src_res = f_src.result()
-            if isinstance(cos_res, Exception): 
-                logging.warning(f"[cosmos] failed: {cos_res}")
-            if isinstance(src_res, Exception): 
-                logging.warning(f"[search] failed: {src_res}")
+        logging.info("[pipeline] Sequential writes complete.")
 
         logging.info(f"====== PIPELINE COMPLETED for {blob_name} → doc_id={doc_id} ======")
 
     except Exception as e:
-        # Capture and output the absolute raw stack trace to the diagnostic logs
         logging.error(f"FATAL ERROR in main: {str(e)}")
         logging.error(traceback.format_exc())
         print(f">>> FATAL EXCEPTION CAUGHT IN MAIN: {traceback.format_exc()} <<<", file=sys.stderr)
@@ -191,7 +211,11 @@ def main(event: func.EventGridEvent) -> None:
 # AI Enrichment functions 
 # ---------------------------------------------------------------------------
 
-def enrich_document_intelligence(content: bytes, blob_name: str, env: dict) -> dict:
+def enrich_document_intelligence(content: bytes, blob_name: str, file_ext: str, env: dict) -> dict:
+    if file_ext in {"txt", "csv", "md", "json"}:
+        logging.info(f"[doc-intel] Plain-text extension detected ({file_ext}). Skipping service analysis.")
+        return {"skipped": True, "reason": "Plain-text file handled natively"}
+
     logging.info(f"[doc-intel] analyzing {blob_name}")
     client = DocumentAnalysisClient(env["DOC_INTEL_ENDPOINT"], AzureKeyCredential(env["DOC_INTEL_KEY"]))
     model = "prebuilt-invoice" if "invoice" in blob_name.lower() else "prebuilt-layout"
@@ -199,14 +223,32 @@ def enrich_document_intelligence(content: bytes, blob_name: str, env: dict) -> d
     poller = client.begin_analyze_document(model, content)
     result = poller.result() 
 
-    extracted = {"model_used": model, "pages": len(result.pages) if result.pages else 0, "key_value_pairs": [], "tables": [], "full_text": ""}
+    # Structuring data to maintain page awareness
+    extracted = {
+        "model_used": model, 
+        "pages_count": len(result.pages) if result.pages else 0, 
+        "pages": [], 
+        "key_value_pairs": [], 
+        "tables": [], 
+        "full_text": ""
+    }
+    
     if result.key_value_pairs:
         extracted["key_value_pairs"] = [{"key": kv.key.content, "value": kv.value.content, "confidence": kv.confidence} for kv in result.key_value_pairs if kv.key and kv.value]
     if result.tables:
         for table in result.tables:
             extracted["tables"].append([{"row": c.row_index, "col": c.column_index, "content": c.content} for c in table.cells])
+    
     if result.pages:
-        extracted["full_text"] = " ".join([line.content for page in result.pages if page.lines for line in page.lines])
+        page_texts = []
+        for page in result.pages:
+            page_text = " ".join([line.content for line in page.lines]) if page.lines else ""
+            extracted["pages"].append({
+                "page_number": page.page_number,
+                "text": page_text
+            })
+            page_texts.append(page_text)
+        extracted["full_text"] = " ".join(page_texts)
     
     return extracted
 
@@ -232,14 +274,29 @@ def enrich_vision(content: bytes, blob_name: str, is_image: bool, env: dict) -> 
     return extracted
 
 
-def enrich_openai(content: bytes, blob_name: str, file_ext: str, env: dict) -> dict:
-    _, token_provider = get_auth()
-    client = AzureOpenAI(
-        azure_endpoint=env["OPENAI_ENDPOINT"], 
-        azure_ad_token_provider=token_provider, 
-        api_version="2024-08-01-preview"
-    )
-    text_content = content.decode("utf-8", errors="ignore")[:4000] if "pdf" in file_ext or "txt" in file_ext else f"[binary file: {blob_name}]"
+def enrich_openai(content: bytes, blob_name: str, file_ext: str, env: dict, native_text: str = "") -> dict:
+    openai_key = env.get("OPENAI_KEY")
+    
+    if openai_key:
+        client = AzureOpenAI(
+            azure_endpoint=env["OPENAI_ENDPOINT"], 
+            api_key=openai_key, 
+            api_version="2024-12-01-preview",
+            max_retries=5
+        )
+    else:
+        _, token_provider = get_auth()
+        client = AzureOpenAI(
+            azure_endpoint=env["OPENAI_ENDPOINT"], 
+            azure_ad_token_provider=token_provider, 
+            api_version="2024-12-01-preview",
+            max_retries=5
+        )
+
+    text_content = native_text[:4000] if native_text else (content.decode("utf-8", errors="ignore")[:4000] if "pdf" in file_ext or "txt" in file_ext else f"[binary file: {blob_name}]")
+    
+    if not text_content.strip():
+        return {"summary": "Empty Document", "document_type": "other", "sentiment": "neutral"}
 
     prompt = f"""Analyze this document and respond ONLY with a valid JSON object.
 Document name: {blob_name}
@@ -255,7 +312,6 @@ Return this exact JSON structure: {{"summary": "...", "document_type": "...", "k
 
     raw = response.choices[0].message.content.strip()
     
-    # Safely extract and parse JSON block
     try:
         if raw.startswith("```json"):
             raw = raw[7:]
@@ -269,7 +325,7 @@ Return this exact JSON structure: {{"summary": "...", "document_type": "...", "k
         logging.warning(f"[openai] JSON parsing failed: {parse_err}. Returning raw output as fallback summary.")
         return {
             "summary": raw[:200],
-            "document_type": "unknown",
+            "document_type": "other",
             "sentiment": "unknown"
         }
 
@@ -317,10 +373,11 @@ def enrich_translator(content: bytes, blob_name: str, file_ext: str, env: dict) 
     }
 
 
-def build_enriched_document(doc_id, blob_name, file_ext, doc_intel, vision, openai, translator):
-    # Use full text from Doc Intel, fallback to Vision OCR text
+def build_enriched_document(doc_id, blob_name, file_ext, doc_intel, vision, openai, translator, native_text=""):
     full_text = ""
-    if doc_intel and doc_intel.get("full_text"):
+    if native_text:
+        full_text = native_text
+    elif doc_intel and doc_intel.get("full_text"):
         full_text = doc_intel.get("full_text")
     elif vision and vision.get("ocr_text"):
         full_text = vision.get("ocr_text")
@@ -347,27 +404,49 @@ def write_cosmos(document: dict, env: dict) -> None:
     client.get_database_client(env["COSMOS_DATABASE"]).get_container_client(env["COSMOS_CONTAINER"]).upsert_item(document)
 
 
-def write_search_index(document: dict, env: dict) -> None:
-    index_client = SearchIndexClient(
-        endpoint=env["AI_SEARCH_ENDPOINT"], 
-        credential=AzureKeyCredential(env["AI_SEARCH_KEY"])
+# ---------------------------------------------------------------------------
+# Vectorization & Chunking Helpers
+# ---------------------------------------------------------------------------
+
+def chunk_text(text: str, chunk_size: int = 1000, overlap: int = 200) -> list:
+    """Helper to split fallback native text into overlapping segments."""
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = start + chunk_size
+        chunks.append(text[start:end])
+        start += chunk_size - overlap
+    return chunks
+
+
+def generate_embedding(text: str, env: dict) -> list:
+    """Generates 3072-dimension vectors via text-embedding-3-large."""
+    openai_key = env.get("OPENAI_KEY")
+    if openai_key:
+        client = AzureOpenAI(
+            azure_endpoint=env["OPENAI_ENDPOINT"], 
+            api_key=openai_key, 
+            api_version="2024-12-01-preview",
+            max_retries=5
+        )
+    else:
+        _, token_provider = get_auth()
+        client = AzureOpenAI(
+            azure_endpoint=env["OPENAI_ENDPOINT"], 
+            azure_ad_token_provider=token_provider, 
+            api_version="2024-12-01-preview",
+            max_retries=5
+        )
+    response = client.embeddings.create(
+        input=[text[:8000]], 
+        model=env.get("EMBEDDING_DEPLOYMENT", "text-embedding-3-large")
     )
-    fields = [
-        SimpleField(name="id", type=SearchFieldDataType.String, key=True),
-        SearchableField(name="blobName", type=SearchFieldDataType.String),
-        SimpleField(name="documentType", type=SearchFieldDataType.String, filterable=True, facetable=True),
-        SimpleField(name="processedAt", type=SearchFieldDataType.DateTimeOffset, filterable=True, sortable=True),
-        SearchableField(name="searchContent", type=SearchFieldDataType.String, analyzer_name="en.microsoft"),
-        SimpleField(name="sentiment", type=SearchFieldDataType.String, filterable=True, facetable=True),
-        SearchableField(name="summary", type=SearchFieldDataType.String),
-        SimpleField(name="detectedLanguage", type=SearchFieldDataType.String, filterable=True),
-    ]
-    try: 
-        index_client.create_or_update_index(SearchIndex(name=env["AI_SEARCH_INDEX"], fields=fields))
-    except Exception as e:
-        logging.warning(f"[search] index creation warning: {e}")
-    
-    search_doc = {
+    return response.data[0].embedding
+
+
+def write_search_index(document: dict, doc_intel: dict, native_text: str, env: dict) -> None:
+    # ── WRITE 1: Dashboard Index ('doc-intelligence') ──
+    dashboard_doc = {
         "id":               document["id"],
         "blobName":         document["blobName"],
         "documentType":     document.get("documentType", "unknown"),
@@ -378,10 +457,89 @@ def write_search_index(document: dict, env: dict) -> None:
         "detectedLanguage": document.get("language", {}).get("detected", ""),
     }
 
-    search_client = SearchClient(
+    dashboard_client = SearchClient(
         endpoint=env["AI_SEARCH_ENDPOINT"], 
         index_name=env["AI_SEARCH_INDEX"], 
         credential=AzureKeyCredential(env["AI_SEARCH_KEY"])
     )
-    search_client.upload_documents([search_doc])
-    logging.info(f"[search] successfully indexed {document['id']}")
+    dashboard_client.upload_documents([dashboard_doc])
+    logging.info(f"[search] Successfully updated dashboard index for {document['id']}")
+
+    # ── WRITE 2: Dual Vector Index ('documents') ──
+    rag_docs = []
+    source_url = f"https://docpipestcp3ljq.blob.core.windows.net/documents-ingest/{document['blobName']}"
+
+    if doc_intel and doc_intel.get("pages"):
+        # Optimal PDF Path: Chunk layout-parsed text page-by-page
+        for page in doc_intel["pages"]:
+            page_num = page["page_number"]
+            page_text = page["text"]
+            if not page_text.strip():
+                continue
+
+            content_vector = []
+            try:
+                content_vector = generate_embedding(page_text, env)
+            except Exception as emb_err:
+                logging.error(f"[search] Embedding generation failed on page {page_num}: {emb_err}")
+
+            # Safe Check: Only append if we successfully compiled a valid 3072-dim vector!
+            if content_vector and len(content_vector) == 3072:
+                rag_docs.append({
+                    "id":             f"{document['id']}_page_{page_num}",
+                    "blobName":       document["blobName"],
+                    "documentName":   document["blobName"],
+                    "documentType":   document.get("documentType", "unknown"),
+                    "processedAt":    document.get("processedAt"),
+                    "enrichedAt":     document.get("processedAt"),
+                    "searchContent":  page_text,
+                    "pageNumber":     int(page_num),
+                    "sourcePath":     source_url,
+                    "sentiment":      document.get("intelligence", {}).get("sentiment", ""),
+                    "summary":        document.get("intelligence", {}).get("summary", ""),
+                    "content_vector": content_vector,
+                })
+            else:
+                logging.warning(f"[search] Skipping page {page_num} upload to RAG index because embedding was empty or invalid.")
+    else:
+        # Fallback Plain-Text Path: Split text string by character chunks
+        fallback_text = native_text if native_text else document.get("searchContent", "")
+        if fallback_text.strip():
+            chunks = chunk_text(fallback_text)
+            for idx, chunk in enumerate(chunks):
+                content_vector = []
+                try:
+                    content_vector = generate_embedding(chunk, env)
+                except Exception as emb_err:
+                    logging.error(f"[search] Embedding generation failed on chunk {idx}: {emb_err}")
+
+                # Safe Check: Only append if we successfully compiled a valid 3072-dim vector!
+                if content_vector and len(content_vector) == 3072:
+                    rag_docs.append({
+                        "id":             f"{document['id']}_chunk_{idx}",
+                        "blobName":       document["blobName"],
+                        "documentName":   document["blobName"],
+                        "documentType":   document.get("documentType", "unknown"),
+                        "processedAt":    document.get("processedAt"),
+                        "enrichedAt":     document.get("processedAt"),
+                        "searchContent":  chunk,
+                        "pageNumber":     1,
+                        "sourcePath":     source_url,
+                        "sentiment":      document.get("intelligence", {}).get("sentiment", ""),
+                        "summary":        document.get("intelligence", {}).get("summary", ""),
+                        "content_vector": content_vector,
+                    })
+                else:
+                    logging.warning(f"[search] Skipping chunk {idx} upload to RAG index because embedding was empty or invalid.")
+
+    # Upload vectorized segments in a batch to RAG Index
+    if rag_docs:
+        rag_client = SearchClient(
+            endpoint=env["AI_SEARCH_ENDPOINT"], 
+            index_name=env["RAG_SEARCH_INDEX"], 
+            credential=AzureKeyCredential(env["AI_SEARCH_KEY"])
+        )
+        rag_client.upload_documents(rag_docs)
+        logging.info(f"[search] Successfully chunked and vectorized {len(rag_docs)} segments into index: {env['RAG_SEARCH_INDEX']}")
+    else:
+        logging.warning("[search] No valid vectorized segments were compiled for RAG index.")
