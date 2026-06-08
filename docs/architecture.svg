@@ -1,0 +1,101 @@
+<svg width="100%" viewBox="0 0 680 920" role="img" xmlns="http://www.w3.org/2000/svg">
+  <title>Azure Intelligent Document Processing Pipeline Architecture</title>
+  <desc>End-to-end architecture showing document ingestion through Event Grid, Azure Functions, four AI services, dual-write to AI Search indexes, Cosmos DB, and Static Web App dashboard.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <style>
+      text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .th { font-size: 13px; font-weight: 600; fill: #1e293b; }
+      .ts { font-size: 11px; font-weight: 400; fill: #64748b; }
+      .nb rect { fill: #eff6ff; stroke: #3b82f6; } .nb .th { fill: #1d4ed8; }
+      .np rect { fill: #f5f3ff; stroke: #7c3aed; } .np .th { fill: #5b21b6; }
+      .nt rect { fill: #f0fdfa; stroke: #0d9488; } .nt .th { fill: #0f766e; }
+      .na rect { fill: #fffbeb; stroke: #d97706; } .na .th { fill: #92400e; }
+      .nc rect { fill: #fff1f0; stroke: #e05c2a; } .nc .th { fill: #9a3412; }
+      .ng rect { fill: #f0fdf4; stroke: #16a34a; } .ng .th { fill: #15803d; }
+      .ns rect { fill: #f8fafc; stroke: #94a3b8; } .ns .th { fill: #334155; }
+    </style>
+  </defs>
+  <g class="ns"><rect x="230" y="16" width="220" height="44" rx="8" stroke-width="0.5"/>
+    <text class="th" x="340" y="34" text-anchor="middle" dominant-baseline="central">Documents in</text>
+    <text class="ts" x="340" y="50" text-anchor="middle" dominant-baseline="central">PDF · image · invoice · form</text></g>
+  <line x1="340" y1="60" x2="340" y2="92" fill="none" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#arrow)"/>
+  <g class="nb"><rect x="200" y="92" width="280" height="44" rx="8" stroke-width="0.5"/>
+    <text class="th" x="340" y="110" text-anchor="middle" dominant-baseline="central">Azure Blob Storage</text>
+    <text class="ts" x="340" y="126" text-anchor="middle" dominant-baseline="central">documents-ingest · IP-restricted</text></g>
+  <line x1="340" y1="136" x2="340" y2="168" fill="none" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#arrow)"/>
+  <g class="np"><rect x="200" y="168" width="280" height="44" rx="8" stroke-width="0.5"/>
+    <text class="th" x="340" y="186" text-anchor="middle" dominant-baseline="central">Azure Event Grid</text>
+    <text class="ts" x="340" y="202" text-anchor="middle" dominant-baseline="central">BlobCreated · instant · 30-attempt retry</text></g>
+  <line x1="340" y1="212" x2="340" y2="244" fill="none" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#arrow)"/>
+  <g class="nt"><rect x="200" y="244" width="280" height="44" rx="8" stroke-width="0.5"/>
+    <text class="th" x="340" y="262" text-anchor="middle" dominant-baseline="central">Azure Functions</text>
+    <text class="ts" x="340" y="278" text-anchor="middle" dominant-baseline="central">Flex Consumption · managed identity</text></g>
+  <text class="ts" x="340" y="306" text-anchor="middle" dominant-baseline="central">sequential AI enrichment</text>
+  <path d="M340 288 L100 344" fill="none" stroke="#94a3b8" stroke-width="0.8" marker-end="url(#arrow)"/>
+  <path d="M340 288 L246 344" fill="none" stroke="#94a3b8" stroke-width="0.8" marker-end="url(#arrow)"/>
+  <path d="M340 288 L434 344" fill="none" stroke="#94a3b8" stroke-width="0.8" marker-end="url(#arrow)"/>
+  <path d="M340 288 L580 344" fill="none" stroke="#94a3b8" stroke-width="0.8" marker-end="url(#arrow)"/>
+  <g class="na"><rect x="30" y="344" width="140" height="56" rx="8" stroke-width="0.5"/>
+    <text class="th" x="100" y="364" text-anchor="middle" dominant-baseline="central">Document</text>
+    <text class="th" x="100" y="380" text-anchor="middle" dominant-baseline="central">Intelligence</text>
+    <text class="ts" x="100" y="394" text-anchor="middle" dominant-baseline="central">S0 · layout · pages</text></g>
+  <g class="na"><rect x="184" y="344" width="124" height="56" rx="8" stroke-width="0.5"/>
+    <text class="th" x="246" y="364" text-anchor="middle" dominant-baseline="central">AI Vision</text>
+    <text class="ts" x="246" y="380" text-anchor="middle" dominant-baseline="central">F0 · captions</text>
+    <text class="ts" x="246" y="394" text-anchor="middle" dominant-baseline="central">tags · OCR</text></g>
+  <g class="nc"><rect x="322" y="344" width="144" height="56" rx="8" stroke-width="0.5"/>
+    <text class="th" x="394" y="362" text-anchor="middle" dominant-baseline="central">Azure OpenAI</text>
+    <text class="ts" x="394" y="378" text-anchor="middle" dominant-baseline="central">gpt-4.1-mini</text>
+    <text class="ts" x="394" y="394" text-anchor="middle" dominant-baseline="central">managed identity</text></g>
+  <g class="na"><rect x="510" y="344" width="140" height="56" rx="8" stroke-width="0.5"/>
+    <text class="th" x="580" y="364" text-anchor="middle" dominant-baseline="central">Translator</text>
+    <text class="ts" x="580" y="380" text-anchor="middle" dominant-baseline="central">F0 · detect lang</text>
+    <text class="ts" x="580" y="394" text-anchor="middle" dominant-baseline="central">translate to EN</text></g>
+  <path d="M100 400 L280 464" fill="none" stroke="#94a3b8" stroke-width="0.8" marker-end="url(#arrow)"/>
+  <path d="M246 400 L310 464" fill="none" stroke="#94a3b8" stroke-width="0.8" marker-end="url(#arrow)"/>
+  <path d="M394 400 L370 464" fill="none" stroke="#94a3b8" stroke-width="0.8" marker-end="url(#arrow)"/>
+  <path d="M580 400 L400 464" fill="none" stroke="#94a3b8" stroke-width="0.8" marker-end="url(#arrow)"/>
+  <g class="ns"><rect x="190" y="464" width="300" height="44" rx="8" stroke-width="0.5"/>
+    <text class="th" x="340" y="482" text-anchor="middle" dominant-baseline="central">Merge enrichment results</text>
+    <text class="ts" x="340" y="498" text-anchor="middle" dominant-baseline="central">uuid.uuid5(blob_name) — idempotent ID</text></g>
+  <text class="ts" x="340" y="526" text-anchor="middle" dominant-baseline="central">dual-write</text>
+  <path d="M280 508 L170 564" fill="none" stroke="#94a3b8" stroke-width="0.8" marker-end="url(#arrow)"/>
+  <path d="M400 508 L510 564" fill="none" stroke="#94a3b8" stroke-width="0.8" marker-end="url(#arrow)"/>
+  <g class="ng"><rect x="30" y="564" width="280" height="56" rx="8" stroke-width="0.5"/>
+    <text class="th" x="170" y="584" text-anchor="middle" dominant-baseline="central">Azure Cosmos DB</text>
+    <text class="ts" x="170" y="600" text-anchor="middle" dominant-baseline="central">documentpipeline · enriched-documents</text>
+    <text class="ts" x="170" y="614" text-anchor="middle" dominant-baseline="central">serverless · full enriched JSON</text></g>
+  <g class="nb"><rect x="370" y="564" width="280" height="56" rx="8" stroke-width="0.5"/>
+    <text class="th" x="510" y="582" text-anchor="middle" dominant-baseline="central">Azure AI Search</text>
+    <text class="ts" x="510" y="598" text-anchor="middle" dominant-baseline="central">doc-intelligence (dashboard)</text>
+    <text class="ts" x="510" y="614" text-anchor="middle" dominant-baseline="central">documents (RAG · vectors)</text></g>
+  <text class="ts" x="510" y="638" text-anchor="middle" dominant-baseline="central">text-embedding-3-large · 3072-dim</text>
+  <line x1="170" y1="620" x2="170" y2="680" fill="none" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#arrow)"/>
+  <line x1="510" y1="645" x2="510" y2="680" fill="none" stroke="#94a3b8" stroke-width="1.2" marker-end="url(#arrow)"/>
+  <g class="nt"><rect x="30" y="680" width="280" height="56" rx="8" stroke-width="0.5"/>
+    <text class="th" x="170" y="700" text-anchor="middle" dominant-baseline="central">Azure Static Web App</text>
+    <text class="ts" x="170" y="716" text-anchor="middle" dominant-baseline="central">Live dashboard</text>
+    <text class="ts" x="170" y="730" text-anchor="middle" dominant-baseline="central">doc-intelligence index · CORS</text></g>
+  <g class="np"><rect x="370" y="680" width="280" height="56" rx="8" stroke-width="0.5"/>
+    <text class="th" x="510" y="700" text-anchor="middle" dominant-baseline="central">Secure RAG Chatbot</text>
+    <text class="ts" x="510" y="716" text-anchor="middle" dominant-baseline="central">rg-rag-pipeline · companion POC</text>
+    <text class="ts" x="510" y="730" text-anchor="middle" dominant-baseline="central">hybrid search · GPT-4.1-mini</text></g>
+  <line x1="340" y1="736" x2="340" y2="776" fill="none" stroke="#94a3b8" stroke-width="0.8" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+  <g class="ns"><rect x="170" y="776" width="340" height="44" rx="8" stroke-width="0.5"/>
+    <text class="th" x="340" y="794" text-anchor="middle" dominant-baseline="central">Azure Monitor + App Insights</text>
+    <text class="ts" x="340" y="810" text-anchor="middle" dominant-baseline="central">traces · invocations · cost tracking</text></g>
+  <rect x="30" y="844" width="10" height="10" rx="2" fill="#eff6ff" stroke="#3b82f6"/>
+  <text class="ts" x="46" y="854" dominant-baseline="central">Storage / Search</text>
+  <rect x="160" y="844" width="10" height="10" rx="2" fill="#fffbeb" stroke="#d97706"/>
+  <text class="ts" x="176" y="854" dominant-baseline="central">AI services</text>
+  <rect x="260" y="844" width="10" height="10" rx="2" fill="#fff1f0" stroke="#e05c2a"/>
+  <text class="ts" x="276" y="854" dominant-baseline="central">OpenAI (MI)</text>
+  <rect x="370" y="844" width="10" height="10" rx="2" fill="#f0fdfa" stroke="#0d9488"/>
+  <text class="ts" x="386" y="854" dominant-baseline="central">Compute / frontend</text>
+  <rect x="520" y="844" width="10" height="10" rx="2" fill="#f5f3ff" stroke="#7c3aed"/>
+  <text class="ts" x="536" y="854" dominant-baseline="central">Event / RAG</text>
+  <text class="ts" x="340" y="900" text-anchor="middle" dominant-baseline="central" fill="#cbd5e1">Azure AI Architect POC · Robert Okolotowicz · 2026</text>
+</svg>
