@@ -26,6 +26,12 @@ param openAiModelName string = 'gpt-4.1-mini'
 @description('Azure OpenAI model version')
 param openAiModelVersion string = '2025-04-14'
 
+@description('Azure OpenAI embedding model deployment name')
+param embeddingModelName string = 'text-embedding-3-large'
+
+@description('Azure OpenAI embedding model version')
+param embeddingModelVersion string = '1'
+
 @description('Your local machine public IP for firewall allowlist (e.g. 123.456.789.0)')
 param allowedIpAddress string
 
@@ -81,11 +87,6 @@ resource outputContainer 'Microsoft.Storage/storageAccounts/blobServices/contain
   name: 'documents-output'
   properties: { publicAccess: 'None' }
 }
-resource deploymentContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
-  parent: blobService
-  name: 'deploymentpackage'
-  properties: { publicAccess: 'None' }
-}
 
 // ---------------------------------------------------------------------------
 // Azure Document Intelligence (Form Recognizer)
@@ -95,7 +96,7 @@ resource documentIntelligence 'Microsoft.CognitiveServices/accounts@2023-05-01' 
   location: location
   tags: tags
   kind: 'FormRecognizer'
-  sku: { name: 'F0' }
+  sku: { name: 'S0' }  // S0 required for large documents (100+ pages)
   properties: {
     publicNetworkAccess: 'Enabled'
     customSubDomainName: '${projectPrefix}-docintel-${shortSuffix}'
@@ -179,7 +180,28 @@ resource openAiDeployment 'Microsoft.CognitiveServices/accounts/deployments@2023
   }
   sku: {
     name: 'Standard'
-    capacity: 1  // 1K TPM — enough for dev, limits exploit blast radius
+    capacity: 10  // TPM in thousands
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Azure OpenAI — Embedding Model (text-embedding-3-large)
+// Used for RAG vector index generation
+// ---------------------------------------------------------------------------
+resource openAiEmbeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2023-05-01' = {
+  parent: openAi
+  name: embeddingModelName
+  dependsOn: [openAiDeployment]  // deployments must be sequential
+  properties: {
+    model: {
+      format: 'OpenAI'
+      name: embeddingModelName
+      version: embeddingModelVersion
+    }
+  }
+  sku: {
+    name: 'Standard'
+    capacity: 10  // TPM in thousands
   }
 }
 
@@ -301,32 +323,12 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
   properties: {
     serverFarmId: appServicePlan.id
     httpsOnly: true
-    functionAppConfig: {                    // <-- ADD FROM HERE
-      deployment: {
-        storage: {
-          type: 'blobContainer'
-          value: '${storageAccount.properties.primaryEndpoints.blob}deploymentpackage'
-          authentication: {
-            type: 'StorageAccountConnectionString'
-            storageAccountConnectionStringName: 'AzureWebJobsStorage'
-          }
-        }
-      }
-      scaleAndConcurrency: {
-        maximumInstanceCount: 10
-        instanceMemoryMB: 2048
-      }
-      runtime: {
-        name: 'python'
-        version: '3.11'
-      }
-    }                                       // <-- TO HERE
     siteConfig: {
-      //linuxFxVersion: 'python|3.11' was causing error
+      linuxFxVersion: 'python|3.11'
       appSettings: [
         { name: 'AzureWebJobsStorage',                   value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};EndpointSuffix=${az.environment().suffixes.storage};AccountKey=${storageAccount.listKeys().keys[0].value}' }
-       //handled by functionappconfig { name: 'FUNCTIONS_EXTENSION_VERSION',           value: '~4' }
-       //handled by functionappconfig { name: 'FUNCTIONS_WORKER_RUNTIME',              value: 'python' }
+        { name: 'FUNCTIONS_EXTENSION_VERSION',           value: '~4' }
+        { name: 'FUNCTIONS_WORKER_RUNTIME',              value: 'python' }
         { name: 'APPINSIGHTS_INSTRUMENTATIONKEY',        value: appInsights.properties.InstrumentationKey }
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.properties.ConnectionString }
         { name: 'STORAGE_ACCOUNT_NAME',                  value: storageAccount.name }
@@ -339,8 +341,45 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
         { name: 'OPENAI_ENDPOINT',                       value: openAi.properties.endpoint }
         { name: 'OPENAI_DEPLOYMENT',                     value: openAiModelName }
         { name: 'AI_SEARCH_ENDPOINT',                    value: 'https://${aiSearch.name}.search.windows.net' }
-        //handled by functionappconfig { name: 'WEBSITE_RUN_FROM_PACKAGE',              value: '1' }
+        { name: 'WEBSITE_RUN_FROM_PACKAGE',              value: '1' }
+        { name: 'EMBEDDING_DEPLOYMENT',                  value: embeddingModelName }
+        { name: 'RAG_SEARCH_INDEX',                      value: 'documents' }
+        { name: 'AI_SEARCH_INDEX',                       value: 'doc-intelligence' }
+        { name: 'COSMOS_KEY',                            value: cosmosAccount.listKeys().primaryMasterKey }
+        { name: 'DOC_INTEL_KEY',                         value: documentIntelligence.listKeys().key1 }
+        { name: 'VISION_KEY',                            value: aiVision.listKeys().key1 }
+        { name: 'TRANSLATOR_KEY',                        value: translator.listKeys().key1 }
+        { name: 'AI_SEARCH_KEY',                         value: aiSearch.listAdminKeys().primaryKey }
       ]
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Event Grid — blob trigger subscription
+// Fires Azure Function instantly on BlobCreated in documents-ingest container
+// ---------------------------------------------------------------------------
+resource eventGridSubscription 'Microsoft.EventGrid/eventSubscriptions@2022-06-15' = {
+  name: 'blob-ingest-trigger'
+  scope: storageAccount
+  dependsOn: [functionApp]
+  properties: {
+    destination: {
+      endpointType: 'AzureFunction'
+      properties: {
+        resourceId: '${functionApp.id}/functions/orchestrator'
+        maxEventsPerBatch: 1
+        preferredBatchSizeInKilobytes: 64
+      }
+    }
+    filter: {
+      includedEventTypes: ['Microsoft.Storage.BlobCreated']
+      subjectBeginsWith: '/blobServices/default/containers/documents-ingest/'
+    }
+    eventDeliverySchema: 'EventGridSchema'
+    retryPolicy: {
+      maxDeliveryAttempts: 30
+      eventTimeToLiveInMinutes: 1440
     }
   }
 }
@@ -369,3 +408,5 @@ output openAiEndpoint          string = openAi.properties.endpoint
 output aiSearchEndpoint        string = 'https://${aiSearch.name}.search.windows.net'
 output docIntelEndpoint        string = documentIntelligence.properties.endpoint
 output appInsightsKey          string = appInsights.properties.InstrumentationKey
+output embeddingDeploymentName string = openAiEmbeddingDeployment.name
+output eventGridSubscriptionId string = eventGridSubscription.id
